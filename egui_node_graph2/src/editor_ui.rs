@@ -245,6 +245,15 @@ where
             drag_released_on_background = true;
         }
 
+        // allocate shapes for existing connections
+        let mut connection_shapes = std::collections::HashMap::new();
+        for (input, outputs) in self.graph.iter_connection_groups() {
+            for (_, &output) in outputs.iter().enumerate() {
+                let idx = ui.painter().add(egui::Shape::Noop);
+                connection_shapes.insert((input, output), idx);
+            }
+        }
+
         /* Draw nodes */
         for node_id in self.node_order.iter().copied() {
             let responses = GraphNodeWidget {
@@ -386,6 +395,7 @@ where
                 src_pos,
                 dst_pos,
                 connection_color,
+                None,
             );
         }
 
@@ -400,12 +410,14 @@ where
                 // outputs can't be wide yet so this is fine.
                 let src_pos = port_locations[&AnyParameterId::Output(output)][0];
                 let dst_pos = conn_locations[&input][hook_n];
+                let shape_idx = connection_shapes[&(input, output)];
                 draw_connection(
                     &self.pan_zoom,
                     ui.painter(),
                     src_pos,
                     dst_pos,
                     connection_color,
+                    Some(shape_idx),
                 );
             }
         }
@@ -573,6 +585,7 @@ fn draw_connection(
     src_pos: Pos2,
     dst_pos: Pos2,
     color: Color32,
+    shape_idx: Option<egui::layers::ShapeIdx>,
 ) {
     let connection_stroke = Stroke {
         width: 5.0 * pan_zoom.zoom,
@@ -589,8 +602,14 @@ fn draw_connection(
         Color32::TRANSPARENT,
         connection_stroke,
     );
-
-    painter.add(bezier);
+    match shape_idx {
+        Some(idx) => {
+            painter.set(idx, bezier);
+        }
+        None => {
+            painter.add(bezier);
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
