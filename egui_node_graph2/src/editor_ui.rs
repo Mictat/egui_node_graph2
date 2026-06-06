@@ -5,7 +5,7 @@ use crate::color_hex_utils::*;
 use crate::utils::ColorUtils;
 
 use super::*;
-use egui::epaint::{CubicBezierShape, RectShape};
+use egui::epaint::{CubicBezierShape, PathShape, RectShape};
 use egui::*;
 
 /// Mapping from parameter id to positions of hooks it contains.
@@ -396,6 +396,7 @@ where
                 dst_pos,
                 connection_color,
                 None,
+                ConnectionLine::Step { frac: 0.5 },
             );
         }
 
@@ -418,6 +419,7 @@ where
                     dst_pos,
                     connection_color,
                     Some(shape_idx),
+                    ConnectionLine::Step { frac: 0.2 },
                 );
             }
         }
@@ -586,28 +588,59 @@ fn draw_connection(
     dst_pos: Pos2,
     color: Color32,
     shape_idx: Option<egui::layers::ShapeIdx>,
+    conn: ConnectionLine,
 ) {
     let connection_stroke = Stroke {
         width: 5.0 * pan_zoom.zoom,
         color,
     };
-
     let control_scale = ((dst_pos.x - src_pos.x) * pan_zoom.zoom / 2.0).max(30.0 * pan_zoom.zoom);
-    let src_control = src_pos + Vec2::X * control_scale;
-    let dst_control = dst_pos - Vec2::X * control_scale;
+    let shape = conn.draw(src_pos, dst_pos, control_scale, connection_stroke);
 
-    let bezier = CubicBezierShape::from_points_stroke(
-        [src_pos, src_control, dst_control, dst_pos],
-        false,
-        Color32::TRANSPARENT,
-        connection_stroke,
-    );
     match shape_idx {
         Some(idx) => {
-            painter.set(idx, bezier);
+            painter.set(idx, shape);
         }
         None => {
-            painter.add(bezier);
+            painter.add(shape);
+        }
+    }
+}
+
+#[allow(unused)]
+enum ConnectionLine {
+    Bezier,
+    Step { frac: f32 },
+}
+impl ConnectionLine {
+    fn draw(&self, src_pos: Pos2, dst_pos: Pos2, control_scale: f32, stroke: Stroke) -> Shape {
+        match self {
+            ConnectionLine::Bezier => {
+                let src_control = src_pos + Vec2::X * control_scale;
+                let dst_control = dst_pos - Vec2::X * control_scale;
+                let bezier = CubicBezierShape::from_points_stroke(
+                    [src_pos, src_control, dst_control, dst_pos],
+                    false,
+                    Color32::TRANSPARENT,
+                    stroke,
+                );
+                bezier.into()
+            }
+            ConnectionLine::Step { frac } => {
+                let dist_x = dst_pos.x - src_pos.x; // can be negative
+                let first_seg_x_len = dist_x * frac;
+
+                let points = vec![
+                    src_pos,
+                    egui::pos2(src_pos.x + first_seg_x_len, src_pos.y),
+                    egui::pos2(src_pos.x + first_seg_x_len, dst_pos.y),
+                    dst_pos,
+                ];
+
+                let line = PathShape::line(points, stroke);
+
+                line.into()
+            }
         }
     }
 }
