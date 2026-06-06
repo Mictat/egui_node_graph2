@@ -203,6 +203,10 @@ where
         let editor_rect = ui.max_rect();
         let resp = ui.allocate_rect(editor_rect, Sense::hover());
 
+        if self.grid_size > 0.0 {
+            self.draw_grid(ui);
+        }
+
         let cursor_pos = ui
             .ctx()
             .input(|i| i.pointer.hover_pos().unwrap_or(Pos2::ZERO));
@@ -584,6 +588,46 @@ where
             node_responses: delayed_responses,
             cursor_in_editor,
             cursor_in_finder,
+        }
+    }
+
+    fn draw_grid(&self, ui: &mut Ui) {
+        let grid_color = if ui.visuals().dark_mode {
+            Color32::from_gray(60).linear_multiply(0.5)
+        } else {
+            Color32::from_gray(200).linear_multiply(0.5)
+        };
+        let clip = ui.clip_rect(); // visible area in graph coordinates
+        let grid_size = self.grid_size * self.pan_zoom.zoom;
+        let anchor = clip.min + self.pan_zoom.pan;
+        let line = Stroke::new(1.0, grid_color);
+
+        // Vertical lines
+        let mut x = anchor.x;
+        while x <= clip.max.x {
+            ui.painter()
+                .line_segment([pos2(x, clip.min.y), pos2(x, clip.max.y)], line);
+            x += grid_size;
+        }
+        let mut x = anchor.x - grid_size; // avoid double painting first line
+        while x >= clip.min.x {
+            ui.painter()
+                .line_segment([pos2(x, clip.min.y), pos2(x, clip.max.y)], line);
+            x -= grid_size;
+        }
+
+        // Horizontal lines
+        let mut y = anchor.y;
+        while y <= clip.max.y {
+            ui.painter()
+                .line_segment([pos2(clip.min.x, y), pos2(clip.max.x, y)], line);
+            y += grid_size;
+        }
+        let mut y = anchor.y - grid_size; // avoid double painting first line
+        while y >= clip.min.y {
+            ui.painter()
+                .line_segment([pos2(clip.min.x, y), pos2(clip.max.x, y)], line);
+            y -= grid_size;
         }
     }
 }

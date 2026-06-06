@@ -33,6 +33,8 @@ pub struct GraphEditorState<NodeData, DataType, ValueType, NodeTemplate, UserSta
     pub node_finder: Option<NodeFinder<NodeTemplate>>,
     /// The panning of the graph viewport.
     pub pan_zoom: PanZoom,
+    /// Spacing of the background grid in graph coordinates. Set to 0.0 to disable.
+    pub grid_size: f32,
     pub _user_state: PhantomData<fn() -> UserState>,
 }
 
@@ -60,6 +62,7 @@ impl<NodeData, DataType, ValueType, NodeKind, UserState> Default
             connection_types: Default::default(),
             node_finder: Default::default(),
             pan_zoom: Default::default(),
+            grid_size: 20.0,
             _user_state: Default::default(),
         }
     }
