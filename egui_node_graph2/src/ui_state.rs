@@ -35,6 +35,8 @@ pub struct GraphEditorState<NodeData, DataType, ValueType, NodeTemplate, UserSta
     pub pan_zoom: PanZoom,
     /// Spacing of the background grid in graph coordinates. Set to 0.0 to disable.
     pub grid_size: f32,
+    pub snap_to_grid: bool,
+    pub ongoing_node_drag_offsets: std::collections::HashMap<NodeId, Vec2>,
     pub _user_state: PhantomData<fn() -> UserState>,
 }
 
@@ -63,6 +65,8 @@ impl<NodeData, DataType, ValueType, NodeKind, UserState> Default
             node_finder: Default::default(),
             pan_zoom: Default::default(),
             grid_size: 20.0,
+            snap_to_grid: true,
+            ongoing_node_drag_offsets: Default::default(),
             _user_state: Default::default(),
         }
     }

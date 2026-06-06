@@ -62,7 +62,7 @@ pub enum NodeResponse<UserResponse: UserResponseTrait, NodeData: NodeDataTrait> 
     RaiseNode(NodeId),
     MoveNode {
         node: NodeId,
-        drag_delta: Vec2,
+        new_position: Pos2,
     },
     User(UserResponse),
 }
@@ -102,6 +102,9 @@ pub struct GraphNodeWidget<'a, NodeData, DataType, ValueType> {
     pub ongoing_drag: Option<(NodeId, AnyParameterId)>,
     pub selected: bool,
     pub pan: Vec2,
+    pub zoom: f32,
+    pub snap_to_grid: bool,
+    pub drag_offsets: &'a mut std::collections::HashMap<NodeId, Vec2>,
 }
 
 impl<NodeData, DataType, ValueType, NodeTemplate, UserResponse, UserState, CategoryType>
@@ -187,6 +190,10 @@ where
         self.pan_zoom.zoom(ui.clip_rect(), ui.style(), zoom_delta);
     }
 
+    pub fn toggle_snap_to_grid(&mut self) {
+        self.snap_to_grid = !self.snap_to_grid;
+    }
+
     fn draw_graph_editor_inside_zoom(
         &mut self,
         ui: &mut Ui,
@@ -270,6 +277,9 @@ where
                     .iter()
                     .any(|selected| *selected == node_id),
                 pan: self.pan_zoom.pan + editor_rect.min.to_vec2(),
+                zoom: self.pan_zoom.zoom,
+                snap_to_grid: self.snap_to_grid,
+                drag_offsets: &mut self.ongoing_node_drag_offsets,
             }
             .show(&self.pan_zoom, ui, user_state);
 
@@ -493,14 +503,27 @@ where
                     self.node_order.remove(old_pos);
                     self.node_order.push(*node_id);
                 }
-                NodeResponse::MoveNode { node, drag_delta } => {
-                    let delta_world = *drag_delta / self.pan_zoom.zoom;
-                    self.node_positions[*node] += delta_world;
-                    // Handle multi‑node movement
+                NodeResponse::MoveNode { node, new_position } => {
+                    let mut final_pos = *new_position;
+
+                    // Snap to grid if enabled
+                    if self.snap_to_grid && self.grid_size > 0.0 {
+                        let gs = self.grid_size;
+                        final_pos.x = (final_pos.x / gs).round() * gs;
+                        final_pos.y = (final_pos.y / gs).round() * gs;
+                    }
+
+                    let old_pos = self.node_positions[*node];
+                    let delta = final_pos - old_pos;
+
+                    // Move the dragged node
+                    self.node_positions[*node] = final_pos;
+
+                    // Move other selected nodes by the same world‑space delta
                     if self.selected_nodes.contains(node) && self.selected_nodes.len() > 1 {
                         for n in self.selected_nodes.iter().copied() {
                             if n != *node {
-                                self.node_positions[n] += delta_world;
+                                self.node_positions[n] += delta;
                             }
                         }
                     }
@@ -1316,13 +1339,30 @@ where
         };
 
         // Movement
-        let drag_delta = window_response.drag_delta();
-        if drag_delta.length_sq() > 0.0 {
-            responses.push(NodeResponse::MoveNode {
-                node: self.node_id,
-                drag_delta,
-            });
-            responses.push(NodeResponse::RaiseNode(self.node_id));
+        // New movement logic using direct mouse position
+        if let Some(pointer_pos) = ui.ctx().pointer_hover_pos() {
+            // Convert mouse screen position to world coordinates
+            let world_mouse = (pointer_pos.to_vec2() - self.pan) / self.zoom;
+
+            // Start of drag: record the offset from the node’s origin to the cursor
+            if window_response.drag_started() {
+                let offset = world_mouse - self.position.to_vec2();
+                self.drag_offsets.insert(self.node_id, offset);
+            }
+
+            // During drag: compute desired world position and emit a move response
+            if let Some(&offset) = self.drag_offsets.get(&self.node_id) {
+                let target_world = (world_mouse - offset).to_pos2();
+                responses.push(NodeResponse::MoveNode {
+                    node: self.node_id,
+                    new_position: target_world, // unsnapped; snapping happens in the handler
+                });
+            }
+
+            // Drag ended: clean up the offset
+            if window_response.drag_stopped() {
+                self.drag_offsets.remove(&self.node_id);
+            }
         }
 
         // Node selection
