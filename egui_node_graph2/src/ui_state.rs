@@ -27,6 +27,8 @@ pub struct GraphEditorState<NodeData, DataType, ValueType, NodeTemplate, UserSta
     pub ongoing_box_selection: Option<egui::Pos2>,
     /// The position of each node.
     pub node_positions: SecondaryMap<NodeId, egui::Pos2>,
+    /// The connection types for persistent storage of related settings.
+    pub connection_types: std::collections::HashMap<(InputId, OutputId), ConnectionLine>,
     /// The node finder is used to create new nodes.
     pub node_finder: Option<NodeFinder<NodeTemplate>>,
     /// The panning of the graph viewport.
@@ -55,6 +57,7 @@ impl<NodeData, DataType, ValueType, NodeKind, UserState> Default
             selected_nodes: Default::default(),
             ongoing_box_selection: Default::default(),
             node_positions: Default::default(),
+            connection_types: Default::default(),
             node_finder: Default::default(),
             pan_zoom: Default::default(),
             _user_state: Default::default(),

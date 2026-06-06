@@ -396,7 +396,7 @@ where
                 dst_pos,
                 connection_color,
                 None,
-                ConnectionLine::Step { frac: 0.5 },
+                &mut ConnectionLine::default(),
             );
         }
 
@@ -411,7 +411,13 @@ where
                 // outputs can't be wide yet so this is fine.
                 let src_pos = port_locations[&AnyParameterId::Output(output)][0];
                 let dst_pos = conn_locations[&input][hook_n];
-                let shape_idx = connection_shapes[&(input, output)];
+                let key = (input, output);
+                let shape_idx = connection_shapes[&key];
+                let conn_type = self
+                    .connection_types
+                    .entry(key)
+                    .or_insert(ConnectionLine::default());
+                conn_type.interact(ui, src_pos, dst_pos);
                 draw_connection(
                     &self.pan_zoom,
                     ui.painter(),
@@ -419,7 +425,7 @@ where
                     dst_pos,
                     connection_color,
                     Some(shape_idx),
-                    ConnectionLine::Step { frac: 0.2 },
+                    conn_type,
                 );
             }
         }
@@ -470,6 +476,7 @@ where
                 NodeResponse::DisconnectEvent { input, output } => {
                     let other_node = self.graph.get_output(*output).node;
                     self.graph.remove_connection(*input, *output);
+                    self.connection_types.remove(&(*input, *output));
                     self.connection_in_progress =
                         Some((other_node, AnyParameterId::Output(*output)));
                 }
@@ -588,14 +595,13 @@ fn draw_connection(
     dst_pos: Pos2,
     color: Color32,
     shape_idx: Option<egui::layers::ShapeIdx>,
-    conn: ConnectionLine,
+    conn: &mut ConnectionLine,
 ) {
     let connection_stroke = Stroke {
         width: 5.0 * pan_zoom.zoom,
         color,
     };
-    let control_scale = ((dst_pos.x - src_pos.x) * pan_zoom.zoom / 2.0).max(30.0 * pan_zoom.zoom);
-    let shape = conn.draw(src_pos, dst_pos, control_scale, connection_stroke);
+    let shape = conn.draw(src_pos, dst_pos, pan_zoom, connection_stroke);
 
     match shape_idx {
         Some(idx) => {
@@ -608,14 +614,35 @@ fn draw_connection(
 }
 
 #[allow(unused)]
-enum ConnectionLine {
+#[derive(Debug, Clone, Copy)]
+pub enum ConnectionLine {
     Bezier,
-    Step { frac: f32 },
+    Step {
+        frac: f32,
+        /// true while the handle is being dragged this frame
+        dragging: bool,
+    },
+}
+impl Default for ConnectionLine {
+    fn default() -> Self {
+        Self::Step {
+            frac: 0.5,
+            dragging: false,
+        }
+    }
 }
 impl ConnectionLine {
-    fn draw(&self, src_pos: Pos2, dst_pos: Pos2, control_scale: f32, stroke: Stroke) -> Shape {
+    fn draw(
+        &mut self,
+        src_pos: Pos2,
+        dst_pos: Pos2,
+        pan_zoom: &PanZoom,
+        stroke: Stroke,
+    ) -> Vec<Shape> {
         match self {
             ConnectionLine::Bezier => {
+                let control_scale =
+                    ((dst_pos.x - src_pos.x) * pan_zoom.zoom / 2.0).max(30.0 * pan_zoom.zoom);
                 let src_control = src_pos + Vec2::X * control_scale;
                 let dst_control = dst_pos - Vec2::X * control_scale;
                 let bezier = CubicBezierShape::from_points_stroke(
@@ -624,22 +651,75 @@ impl ConnectionLine {
                     Color32::TRANSPARENT,
                     stroke,
                 );
-                bezier.into()
+                vec![bezier.into()]
             }
-            ConnectionLine::Step { frac } => {
-                let dist_x = dst_pos.x - src_pos.x; // can be negative
-                let first_seg_x_len = dist_x * frac;
-
+            ConnectionLine::Step { frac, .. } => {
+                let dist = dst_pos - src_pos; // can be negative
+                let first_seg_x_len = dist.x * *frac;
                 let points = vec![
                     src_pos,
                     egui::pos2(src_pos.x + first_seg_x_len, src_pos.y),
                     egui::pos2(src_pos.x + first_seg_x_len, dst_pos.y),
                     dst_pos,
                 ];
-
                 let line = PathShape::line(points, stroke);
 
-                line.into()
+                let handle_radius = 5.0 * pan_zoom.zoom;
+                let handle_x = src_pos.x + first_seg_x_len;
+                let handle_y = src_pos.y + dist.y * 0.5;
+                let handle_pos = pos2(handle_x, handle_y);
+                let handle_fill =
+                    Shape::circle_filled(handle_pos, handle_radius, stroke.color.lighten(1.5));
+
+                vec![line.into(), handle_fill]
+            }
+        }
+    }
+
+    /// Call this each frame to allow dragging the step’s vertical bend point.
+    pub fn interact(&mut self, ui: &egui::Ui, src_pos: Pos2, dst_pos: Pos2) {
+        if let ConnectionLine::Step {
+            frac,
+            ref mut dragging,
+        } = self
+        {
+            let dist = dst_pos - src_pos;
+            if dist.x.abs() < f32::EPSILON {
+                return;
+            }
+
+            let handle_radius = 6.0; // same as visual dot radius + a little margin
+            let handle_x = src_pos.x + dist.x * *frac;
+            let handle_y = src_pos.y + dist.y * 0.5;
+            let handle_pos = pos2(handle_x, handle_y);
+
+            let pointer = ui.input(|i| i.pointer.hover_pos());
+
+            if let Some(pointer) = pointer {
+                let dist_handle = pointer.distance(handle_pos);
+
+                // -- Visual feedback when hovering --
+                if dist_handle < handle_radius {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+                }
+
+                // -- Start dragging only on click inside the handle --
+                if ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary))
+                    && dist_handle < handle_radius
+                {
+                    *dragging = true;
+                }
+
+                // -- Release drag --
+                if !ui.input(|i| i.pointer.primary_down()) {
+                    *dragging = false;
+                }
+
+                // -- Update frac while dragging --
+                if *dragging {
+                    *frac = ((pointer.x - src_pos.x) / dist.x).clamp(0.05, 0.95);
+                    ui.ctx().request_repaint(); // smooth redraw
+                }
             }
         }
     }
