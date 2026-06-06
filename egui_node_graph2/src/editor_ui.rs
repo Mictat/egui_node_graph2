@@ -144,7 +144,7 @@ where
         if ui.rect_contains_pointer(clip_rect) {
             let scroll_delta = ui.input(|i| i.smooth_scroll_delta.y);
             if scroll_delta != 0.0 {
-                let zoom_delta = (scroll_delta * 0.002).exp();
+                let zoom_delta = (scroll_delta * 0.001).exp();
                 self.zoom(ui, zoom_delta);
             }
         }
@@ -164,30 +164,8 @@ where
         self.zoom(ui, new_zoom);
     }
 
-    /// Zoom within the where you call `draw_graph_editor`. Use values like 1.01, or 0.99 to zoom.
-    /// For example: `let zoom_delta = (scroll_delta * 0.002).exp();`
     pub fn zoom(&mut self, ui: &Ui, zoom_delta: f32) {
-        // Update zoom, and styles
-        let zoom_before = self.pan_zoom.zoom;
         self.pan_zoom.zoom(ui.clip_rect(), ui.style(), zoom_delta);
-        if zoom_before != self.pan_zoom.zoom {
-            let actual_delta = self.pan_zoom.zoom / zoom_before;
-            self.update_node_positions_after_zoom(actual_delta);
-        }
-    }
-
-    fn update_node_positions_after_zoom(&mut self, zoom_delta: f32) {
-        // Update node positions, zoom towards center
-        let half_size = self.pan_zoom.clip_rect.size() / 2.0;
-        for (_id, node_pos) in self.node_positions.iter_mut() {
-            // 1. Get node local position (relative to origo)
-            let local_pos = node_pos.to_vec2() - half_size + self.pan_zoom.pan;
-            // 2. Scale local position by zoom delta
-            let scaled_local_pos = (local_pos * zoom_delta).to_pos2();
-            // 3. Transform back to global position
-            *node_pos = scaled_local_pos + half_size - self.pan_zoom.pan;
-            // This way we can retain pan untouched when zooming :)
-        }
     }
 
     fn draw_graph_editor_inside_zoom(
@@ -294,12 +272,10 @@ where
                         node_kind.user_data(user_state),
                         |graph, node_id| node_kind.build_node(graph, user_state, node_id),
                     );
-                    self.node_positions.insert(
-                        new_node,
-                        node_finder.position.unwrap_or(cursor_pos)
-                            - self.pan_zoom.pan
-                            - editor_rect.min.to_vec2(),
-                    );
+                    let raw_screen = node_finder.position.unwrap_or(cursor_pos);
+                    let world_pos = (raw_screen - self.pan_zoom.pan - editor_rect.min.to_vec2())
+                        / self.pan_zoom.zoom;
+                    self.node_positions.insert(new_node, world_pos);
                     self.node_order.push(new_node);
 
                     should_close_node_finder = true;
@@ -494,12 +470,13 @@ where
                     self.node_order.push(*node_id);
                 }
                 NodeResponse::MoveNode { node, drag_delta } => {
-                    self.node_positions[*node] += *drag_delta;
-                    // Handle multi-node selection movement
+                    let delta_world = *drag_delta / self.pan_zoom.zoom;
+                    self.node_positions[*node] += delta_world;
+                    // Handle multi‑node movement
                     if self.selected_nodes.contains(node) && self.selected_nodes.len() > 1 {
                         for n in self.selected_nodes.iter().copied() {
                             if n != *node {
-                                self.node_positions[n] += *drag_delta;
+                                self.node_positions[n] += delta_world;
                             }
                         }
                     }
@@ -794,12 +771,16 @@ where
         ui: &mut Ui,
         user_state: &mut UserState,
     ) -> Vec<NodeResponse<UserResponse, NodeData>> {
+        let zoom = pan_zoom.zoom;
+        // world * zoom + pan  →  screen position of the node’s top‑left corner
+        let screen_pos = self.position.to_vec2() * zoom + self.pan;
+
         let mut child_ui = ui.new_child(
             UiBuilder::new()
                 .layout(Default::default())
                 .max_rect(Rect::from_min_size(
-                    *self.position + self.pan,
-                    Self::MAX_NODE_SIZE.into(),
+                    screen_pos.to_pos2(),
+                    (Vec2::from(Self::MAX_NODE_SIZE) * zoom).into(),
                 ))
                 .id_salt(self.node_id),
         );
@@ -835,10 +816,7 @@ where
         let outline_shape = ui.painter().add(Shape::Noop);
         let background_shape = ui.painter().add(Shape::Noop);
 
-        let mut outer_rect_bounds = ui.available_rect_before_wrap();
-        // Scale hack, otherwise some (larger) rects expand too much when zoomed out
-        outer_rect_bounds.max.x =
-            outer_rect_bounds.min.x + outer_rect_bounds.width() * pan_zoom.zoom;
+        let outer_rect_bounds = ui.available_rect_before_wrap();
 
         let mut inner_rect = outer_rect_bounds.shrink2(margin);
 
