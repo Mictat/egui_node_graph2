@@ -399,6 +399,8 @@ where
             );
         }
 
+        let mut connection_handle_dragged = false;
+
         // draw existing connections
         for (input, outputs) in self.graph.iter_connection_groups() {
             for (hook_n, &output) in outputs.iter().enumerate() {
@@ -417,6 +419,9 @@ where
                     .entry(key)
                     .or_insert(ConnectionLine::default());
                 conn_type.interact(ui, src_pos, dst_pos);
+                if let ConnectionLine::Step { dragging: true, .. } = conn_type {
+                    connection_handle_dragged = true;
+                }
                 draw_connection(
                     &self.pan_zoom,
                     ui.painter(),
@@ -573,6 +578,7 @@ where
         if drag_started_on_background
             && mouse.primary_down()
             && !ui.ctx().input(|i| i.modifiers.command_only())
+            && !connection_handle_dragged
         {
             self.ongoing_box_selection = Some(cursor_pos);
         }
