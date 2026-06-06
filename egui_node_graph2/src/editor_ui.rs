@@ -1,7 +1,9 @@
 use std::collections::HashSet;
 use std::num::NonZeroU32;
+use std::sync::Arc;
 
 use crate::color_hex_utils::*;
+use crate::scale::Scale;
 use crate::utils::ColorUtils;
 
 use super::*;
@@ -144,8 +146,25 @@ where
         if ui.rect_contains_pointer(clip_rect) {
             let scroll_delta = ui.input(|i| i.smooth_scroll_delta.y);
             if scroll_delta != 0.0 {
-                let zoom_delta = (scroll_delta * 0.001).exp();
-                self.zoom(ui, zoom_delta);
+                let zoom_delta = (scroll_delta * 0.002).exp();
+                let old_zoom = self.pan_zoom.zoom;
+                let new_zoom = (old_zoom * zoom_delta).clamp(MIN_ZOOM, MAX_ZOOM);
+
+                // Mouse‑relative zoom: keep the world point under the cursor fixed
+                if let Some(mouse_pos) = ui.ctx().pointer_hover_pos() {
+                    let editor_min = clip_rect.min.to_vec2();
+                    // world = (screen - pan - editor_min) / old_zoom
+                    let world = (mouse_pos.to_vec2() - self.pan_zoom.pan - editor_min) / old_zoom;
+                    // pan_new = screen - editor_min - world * new_zoom
+                    let pan_new = mouse_pos.to_vec2() - editor_min - world * new_zoom;
+                    self.pan_zoom.pan = pan_new;
+                }
+
+                // Apply zoom and style
+                self.pan_zoom.clip_rect = clip_rect;
+                self.pan_zoom.zoom = new_zoom;
+                self.pan_zoom.zoomed_style = Arc::new(ui.style().scaled(new_zoom));
+                self.pan_zoom.started = true;
             }
         }
 
