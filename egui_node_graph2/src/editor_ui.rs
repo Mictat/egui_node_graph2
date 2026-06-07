@@ -682,8 +682,12 @@ fn draw_connection(
     }
 }
 
+#[cfg(feature = "persistence")]
+use serde::{Deserialize, Serialize};
+
 #[allow(unused)]
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "persistence", derive(Serialize, Deserialize))]
 pub enum ConnectionLine {
     Bezier,
     Step {

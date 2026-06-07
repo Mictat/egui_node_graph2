@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## 0.8.0 - 2026-06-07
+
+- Updated to egui 0.34.2. By @mictat
+- Added `ConnectionLine` for flexible connections (added simple step line). By @mictat
+- Added `ConnectionLine` to editor state so connections can be modified. By @mictat
+- Added a background grid with optional snapping when dragging nodes. By @mictat
+- Modified zoom logic to apply consistently, and to center on cursor. By @mictat
+
 ## 0.7.0 - 2024-11-03
 
 - Updated to egui 0.29
