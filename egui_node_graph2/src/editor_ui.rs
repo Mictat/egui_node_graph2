@@ -428,7 +428,15 @@ where
                     .connection_types
                     .entry(key)
                     .or_insert(ConnectionLine::default());
-                conn_type.interact(ui, src_pos, dst_pos);
+                conn_type.interact(
+                    ui,
+                    src_pos,
+                    dst_pos,
+                    &self.pan_zoom,
+                    self.snap_to_grid,
+                    self.grid_size,
+                    editor_rect.min.to_vec2(),
+                );
                 if let ConnectionLine::Step { dragging: true, .. } = conn_type {
                     connection_handle_dragged = true;
                 }
@@ -750,7 +758,16 @@ impl ConnectionLine {
     }
 
     /// Call this each frame to allow dragging the step’s vertical bend point.
-    pub fn interact(&mut self, ui: &egui::Ui, src_pos: Pos2, dst_pos: Pos2) {
+    pub fn interact(
+        &mut self,
+        ui: &egui::Ui,
+        src_pos: Pos2,
+        dst_pos: Pos2,
+        pan_zoom: &PanZoom,
+        snap_to_grid: bool,
+        grid_size: f32,
+        editor_min: Vec2,
+    ) {
         if let ConnectionLine::Step {
             frac,
             ref mut dragging,
@@ -775,14 +792,12 @@ impl ConnectionLine {
                 if dist_handle < handle_radius {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
                 }
-
                 // -- Start dragging only on click inside the handle --
                 if ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary))
                     && dist_handle < handle_radius
                 {
                     *dragging = true;
                 }
-
                 // -- Release drag --
                 if !ui.input(|i| i.pointer.primary_down()) {
                     *dragging = false;
@@ -790,8 +805,23 @@ impl ConnectionLine {
 
                 // -- Update frac while dragging --
                 if *dragging {
-                    *frac = ((pointer.x - src_pos.x) / dist.x).clamp(0.05, 0.95);
-                    ui.ctx().request_repaint(); // smooth redraw
+                    // Convert pointer X to world coordinate
+                    let world_x = (pointer.x - pan_zoom.pan.x - editor_min.x) / pan_zoom.zoom;
+                    // Snap to vertical grid lines if enabled
+                    let snapped_world_x = if snap_to_grid && grid_size > 0.0 {
+                        (world_x / grid_size).round() * grid_size
+                    } else {
+                        world_x
+                    };
+                    // Convert back to screen X
+                    let snapped_screen_x =
+                        snapped_world_x * pan_zoom.zoom + pan_zoom.pan.x + editor_min.x;
+                    // Update frac based on snapped position
+                    let dist_x = dst_pos.x - src_pos.x;
+                    if dist_x.abs() > f32::EPSILON {
+                        *frac = ((snapped_screen_x - src_pos.x) / dist_x).clamp(0.005, 0.995);
+                    }
+                    ui.ctx().request_repaint();
                 }
             }
         }

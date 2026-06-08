@@ -410,13 +410,13 @@ impl eframe::App for NodeGraphExample {
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn ui(&mut self, ctx: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        egui::TopBottomPanel::top("top").show(ctx, |ui| {
+        egui::Panel::top("top").show_inside(ctx, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
                 egui::widgets::global_theme_preference_switch(ui);
             });
         });
         let graph_response = egui::CentralPanel::default()
-            .show(ctx, |ui| {
+            .show_inside(ctx, |ui| {
                 self.state.draw_graph_editor(
                     ui,
                     AllMyNodeTemplates,
