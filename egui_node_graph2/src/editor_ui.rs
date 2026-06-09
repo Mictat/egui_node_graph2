@@ -997,14 +997,17 @@ where
                         .max_connections
                         .map(NonZeroU32::get)
                         .unwrap_or(u32::MAX) as usize;
-                    let port_height = port_height(
+                    let world_port_height = port_height(
                         max_connections != 1,
                         self.graph.connections(param_id).len(),
                         max_connections,
                     );
-                    let margin = 5.0;
+                    // Convert to screen-space heights
+                    let screen_port_height = world_port_height * pan_zoom.zoom;
+                    let screen_margin = 5.0 * pan_zoom.zoom;
+
                     let missing_space =
-                        port_height - (height_intermediate - height_before) + margin;
+                        screen_port_height - (height_intermediate - height_before) + screen_margin;
                     if missing_space > 0.0 {
                         ui.add_space(missing_space);
                     }
