@@ -100,6 +100,7 @@ impl Scale for Style {
         self.spacing.icon_spacing *= amount;
         self.spacing.tooltip_width *= amount;
         self.spacing.combo_height *= amount;
+        self.spacing.combo_width *= amount;
         self.spacing.scroll.bar_width *= amount;
         self.spacing.scroll.floating_allocated_width *= amount;
         self.spacing.scroll.floating_width *= amount;
